@@ -256,6 +256,29 @@
         off, clear <code>API_KEY</code> and restart.
       </p>
     </div>
+
+    <div class="panel">
+      <strong>Model loading &amp; keep-alive (performance)</strong>
+      <p class="hint" style="line-height:1.7; margin:8px 0">
+        To avoid a slow first request (a "cold start" while the model loads into memory),
+        the server can preload a model and keep it resident. These are <b>server settings</b>
+        — set them in <code>.env</code> and restart (<code>./run.sh</code>).
+      </p>
+      <ul class="hint" style="line-height:1.85; padding-left:18px; margin:6px 0">
+        <li><code>PRELOAD=true</code> — load <code>DEFAULT_MODEL</code> at startup so it's
+            ready before the first request.</li>
+        <li><code>KEEP_ALIVE=30m</code> — how long a model stays in memory after a request.
+            Examples: <code>30m</code>, <code>1h</code>, <code>-1</code> (never unload),
+            <code>0</code> (unload immediately), empty (ollama's 5m default).</li>
+      </ul>
+      <div style="background:var(--panel2); border:1px solid var(--bd); border-radius:6px; padding:8px 10px; font-family:monospace; font-size:12.5px; white-space:pre; margin-top:6px"># .env example
+PRELOAD=true
+KEEP_ALIVE=30m</div>
+      <small class="hint" style="display:block; margin-top:6px">
+        Switching the chat model still unloads the previous one, so only one chat model
+        stays resident on the GPU.
+      </small>
+    </div>
   </section>
 </main>
 
