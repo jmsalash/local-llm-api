@@ -6,7 +6,7 @@ from typing import Any, AsyncIterator
 
 import httpx
 
-from .config import settings
+from .config import keep_alive_value, settings
 
 
 class OllamaError(RuntimeError):
@@ -65,6 +65,23 @@ class OllamaClient:
         except Exception:  # noqa: BLE001 - unloading is best-effort
             return False
 
+    async def warm(self, model: str, keep_alive: Any = None) -> bool:
+        """Preload a model into memory so the first real request isn't a cold start.
+
+        Sends an empty /api/generate with keep_alive, which loads the model and pins it
+        for that duration. Best-effort; loading can take a while, so use a long timeout.
+        """
+        ka = keep_alive if keep_alive is not None else keep_alive_value()
+        payload: dict[str, Any] = {"model": model}
+        if ka is not None:
+            payload["keep_alive"] = ka
+        try:
+            timeout = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=300.0)
+            r = await self._client.post("/api/generate", json=payload, timeout=timeout)
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001 - warming is best-effort
+            return False
+
     async def loaded_models(self) -> list[str]:
         """Names of models currently loaded in memory (ollama /api/ps)."""
         try:
@@ -100,6 +117,9 @@ class OllamaClient:
             "stream": False,
             "think": think,
         }
+        ka = keep_alive_value()
+        if ka is not None:
+            payload["keep_alive"] = ka
         if options:
             payload["options"] = options
         if tools:
@@ -124,6 +144,9 @@ class OllamaClient:
             "stream": True,
             "think": think,
         }
+        ka = keep_alive_value()
+        if ka is not None:
+            payload["keep_alive"] = ka
         if options:
             payload["options"] = options
         async with self._client.stream("POST", "/api/chat", json=payload) as r:

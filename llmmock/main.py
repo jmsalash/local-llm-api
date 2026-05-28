@@ -27,9 +27,18 @@ from .schemas import (
 )
 
 
+_startup_tasks: set[asyncio.Task] = set()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.get_conn()  # init schema on startup
+    if settings.PRELOAD:
+        # Warm the default model in the background so the server is reachable immediately
+        # while the model loads into memory — avoids a slow first request (cold start).
+        t = asyncio.create_task(client.warm(settings.DEFAULT_MODEL))
+        _startup_tasks.add(t)
+        t.add_done_callback(_startup_tasks.discard)
     yield
     await client.aclose()
 
@@ -255,6 +264,14 @@ async def unload_model(req: ModelRef, _: None = Depends(require_auth)) -> dict[s
 async def loaded_models(_: None = Depends(require_auth)) -> dict[str, Any]:
     """Models currently loaded in memory."""
     return {"data": await client.loaded_models()}
+
+
+@app.post("/models/warm")
+async def warm_model(req: ModelRef, _: None = Depends(require_auth)) -> dict[str, Any]:
+    """Preload a model into memory now (keeps it resident per KEEP_ALIVE)."""
+    target = normalize_model_ref(req.model, req.quantization)
+    ok = await client.warm(target)
+    return {"warmed": target, "ok": ok}
 
 
 @app.post("/models/check")

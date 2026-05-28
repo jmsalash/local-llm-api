@@ -34,6 +34,23 @@ class Settings:
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8080"))
     API_KEY: str = os.getenv("API_KEY", "")
+    # How long ollama keeps a model in memory after a request. Duration string ("30m",
+    # "1h"), seconds ("300"), "-1" = keep forever, "0" = unload immediately, "" = disable.
+    KEEP_ALIVE: str = os.getenv("KEEP_ALIVE", "30m")
+    # Preload DEFAULT_MODEL into memory at startup so the first request isn't a cold start.
+    PRELOAD: bool = os.getenv("PRELOAD", "true").lower() in ("1", "true", "yes", "on")
 
 
 settings = Settings()
+
+
+def keep_alive_value():
+    """settings.KEEP_ALIVE as int seconds / -1 when numeric, else the raw duration string,
+    or None to omit it (use ollama's own default)."""
+    v = (settings.KEEP_ALIVE or "").strip()
+    if v == "":
+        return None
+    try:
+        return int(v)
+    except ValueError:
+        return v

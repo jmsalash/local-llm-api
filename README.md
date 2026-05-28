@@ -173,6 +173,8 @@ You can reference an agent by its `id` or its `name` in the URL.
 | `EMBED_MODEL` | `nomic-embed-text` | embeddings for memory |
 | `DEFAULT_NUM_CTX` | `8192` | context window |
 | `DEFAULT_TEMPERATURE` | `0.7` | sampling temp |
+| `PRELOAD` | `true` | warm `DEFAULT_MODEL` at startup to avoid a slow first request |
+| `KEEP_ALIVE` | `30m` | how long ollama keeps a model loaded after a request (`-1`=forever, `0`=unload now, ``=ollama default) |
 | `MEMORY_TOP_K` | `5` | memories injected per turn |
 | `MEMORY_MIN_SCORE` | `0.35` | min cosine similarity to inject |
 | `API_KEY` | *(empty)* | if set, require `Authorization: Bearer <key>` |
