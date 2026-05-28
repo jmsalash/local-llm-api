@@ -337,6 +337,19 @@ function fillModels(models) {
     });
     if (cur) sel.value = cur;
   }
+  if (prevChatModel === null) prevChatModel = $("model").value || null;  // remember initial chat model
+}
+
+// On an 8GB GPU we keep only one chat model resident: switching the chat model unloads
+// the previous one so the server doesn't hold two large models at once. (Agents are
+// unaffected — they may use their own models.)
+let prevChatModel = null;
+async function onChatModelChange() {
+  const next = $("model").value;
+  if (prevChatModel && prevChatModel !== next) {
+    fetch(base() + "/models/unload", { method: "POST", headers: headers(), body: JSON.stringify({ model: prevChatModel }) }).catch(() => {});
+  }
+  prevChatModel = next;
 }
 
 /* ---------- Chat tab (OpenAI-compatible) ---------- */
@@ -629,6 +642,7 @@ function stopPullPolling() { if (pullTimer) { clearInterval(pullTimer); pullTime
 /* keyboard + init */
 $("chatInput").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendChat(); });
 $("agentInput").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendAgent(); });
+$("model").addEventListener("change", onChatModelChange);  // unload previous chat model on switch
 // Remember API key + base URL across reloads (handy when the server requires a key).
 $("apiKey").value = localStorage.getItem("llmmock_key") || "";
 $("baseUrl").value = localStorage.getItem("llmmock_base") || "";

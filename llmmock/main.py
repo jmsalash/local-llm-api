@@ -243,6 +243,20 @@ async def delete_model(req: ModelRef, _: None = Depends(require_auth)) -> dict[s
     return {"deleted": target}
 
 
+@app.post("/models/unload")
+async def unload_model(req: ModelRef, _: None = Depends(require_auth)) -> dict[str, Any]:
+    """Evict a model from memory now (frees VRAM). Used when switching chat models."""
+    target = normalize_model_ref(req.model, req.quantization)
+    ok = await client.unload(target)
+    return {"unloaded": target, "ok": ok}
+
+
+@app.get("/models/loaded")
+async def loaded_models(_: None = Depends(require_auth)) -> dict[str, Any]:
+    """Models currently loaded in memory."""
+    return {"data": await client.loaded_models()}
+
+
 @app.post("/models/check")
 async def check_model(req: ModelRef, _: None = Depends(require_auth)) -> dict[str, Any]:
     """Verify a model actually loads/runs on this backend by generating one token.

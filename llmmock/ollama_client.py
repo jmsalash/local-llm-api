@@ -57,6 +57,22 @@ class OllamaClient:
         if r.status_code not in (200, 404):
             raise OllamaError(f"delete failed ({r.status_code}): {r.text}")
 
+    async def unload(self, model: str) -> bool:
+        """Ask ollama to evict a model from memory now (keep_alive=0). Best-effort."""
+        try:
+            r = await self._client.post("/api/generate", json={"model": model, "keep_alive": 0})
+            return r.status_code == 200
+        except Exception:  # noqa: BLE001 - unloading is best-effort
+            return False
+
+    async def loaded_models(self) -> list[str]:
+        """Names of models currently loaded in memory (ollama /api/ps)."""
+        try:
+            r = await self._client.get("/api/ps")
+            return [m.get("name") for m in r.json().get("models", [])]
+        except Exception:  # noqa: BLE001
+            return []
+
     async def embed(self, text: str, model: str | None = None) -> list[float]:
         model = model or settings.EMBED_MODEL
         r = await self._client.post("/api/embed", json={"model": model, "input": text})
