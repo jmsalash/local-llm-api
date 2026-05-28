@@ -9,3 +9,15 @@ data/
 *.db
 *.db-wal
 *.db-shm
+
+# secrets / TLS material — never commit
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+secrets.*
+*.secret
