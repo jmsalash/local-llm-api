@@ -53,7 +53,7 @@
   .memlist { display:flex; flex-direction:column; gap:4px; max-height:160px; overflow:auto; }
   .memrow { display:flex; gap:8px; align-items:center; font-size:13px; }
   .memrow button { padding:1px 6px; font-size:11px; }
-  small.hint { color:var(--mut); }
+  .hint { color:var(--mut); }
   a { color:var(--acc); text-decoration:none; }
   a:hover { text-decoration:underline; }
   .find { margin:0 0 12px; padding:9px 11px; background:var(--panel2); border:1px solid var(--bd); border-radius:6px; font-size:13px; line-height:1.7; }
@@ -64,10 +64,6 @@
 <header>
   <h1>llmmock <small>local LLM test client</small></h1>
   <span class="grow"></span>
-  <div class="switch"><label style="margin:0">Base URL</label>
-    <input id="baseUrl" style="width:220px" placeholder="(same origin)" /></div>
-  <div class="switch"><label style="margin:0">API key</label>
-    <input id="apiKey" type="password" style="width:120px" placeholder="optional" /></div>
   <div class="switch"><span id="statusDot" class="dot"></span><span id="statusTxt" class="mut">checking…</span></div>
   <button class="sec" onclick="checkHealth()">Test</button>
 </header>
@@ -76,6 +72,7 @@
   <button id="tab-chat" class="active" onclick="showTab('chat')">Chat (OpenAI API)</button>
   <button id="tab-agents" onclick="showTab('agents')">Agents</button>
   <button id="tab-models" onclick="showTab('models')">Models</button>
+  <button id="tab-settings" onclick="showTab('settings')">Settings</button>
 </div>
 
 <main>
@@ -220,6 +217,46 @@
       <div id="modelList" style="margin-top:8px"></div>
     </div>
   </section>
+
+  <!-- ============ SETTINGS TAB ============ -->
+  <section id="view-settings" style="display:none">
+    <div class="panel">
+      <strong>Connection</strong>
+      <div class="row" style="margin-top:8px; align-items:flex-end">
+        <div class="col grow"><label>Base URL (leave blank = the server that served this page)</label>
+          <input id="baseUrl" placeholder="(same origin)"></div>
+        <div class="col" style="width:240px"><label>API key (only if the server requires one)</label>
+          <input id="apiKey" type="password" placeholder="none"></div>
+        <div class="col"><label>&nbsp;</label><button class="sec" onclick="checkHealth()">Test connection</button></div>
+      </div>
+      <small class="hint" style="display:block; margin-top:6px">
+        Both values are remembered in this browser. The connection light at the top-right
+        shows status (and “auth required” if a key is missing or wrong).
+      </small>
+    </div>
+
+    <div class="panel">
+      <strong>Authentication (optional)</strong>
+      <p class="hint" style="line-height:1.7; margin:8px 0">
+        Authentication is <b>off by default</b> — anyone who can reach the server can use
+        it. It's turned on <b>on the server</b>, not from this page (the browser can only
+        supply the key, not set it).
+      </p>
+      <b style="font-size:13px">To require a key:</b>
+      <ol class="hint" style="line-height:1.85; padding-left:18px; margin:6px 0">
+        <li>On the server, set <code>API_KEY</code> in the <code>.env</code> file (or as an
+            environment variable) — e.g. <code>API_KEY=choose-a-secret</code>.</li>
+        <li>Restart the server (<code>./run.sh</code>).</li>
+        <li>Every request now needs that key. Paste the same value into <b>API key</b> above;
+            it's sent as <code>Authorization: Bearer &lt;key&gt;</code> and remembered here.</li>
+      </ol>
+      <p class="hint" style="line-height:1.7; margin:8px 0">
+        <code>/health</code> and this page (<code>/ui</code>) stay open so the app can still
+        load; every data endpoint returns <b>401</b> without a valid key. To turn auth back
+        off, clear <code>API_KEY</code> and restart.
+      </p>
+    </div>
+  </section>
 </main>
 
 <script>
@@ -255,7 +292,7 @@ async function* sse(resp) {
 }
 
 function showTab(t) {
-  for (const name of ["chat", "agents", "models"]) {
+  for (const name of ["chat", "agents", "models", "settings"]) {
     $("view-" + name).style.display = t === name ? "" : "none";
     $("tab-" + name).classList.toggle("active", t === name);
   }
