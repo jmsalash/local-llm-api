@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>llmmock — test client</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1f232c; --bd:#2a2f3a;
+          --tx:#e6e8ee; --mut:#9aa3b2; --acc:#6ea8fe; --acc2:#3b82f6;
+          --think:#caa46a; --ok:#5fd38d; --err:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx);
+         font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px;
+           background:var(--panel); border-bottom:1px solid var(--bd); flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; font-weight:600; }
+  header h1 small { color:var(--mut); font-weight:400; }
+  .grow { flex:1; }
+  input, textarea, select, button { font:inherit; color:var(--tx);
+           background:var(--panel2); border:1px solid var(--bd); border-radius:6px; padding:6px 8px; }
+  input::placeholder, textarea::placeholder { color:var(--mut); }
+  button { cursor:pointer; background:var(--acc2); border-color:var(--acc2); color:#fff; }
+  button.sec { background:var(--panel2); border-color:var(--bd); color:var(--tx); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); display:inline-block; }
+  .dot.ok { background:var(--ok); } .dot.err { background:var(--err); }
+  .tabs { display:flex; gap:4px; padding:8px 16px 0; }
+  .tabs button { border-radius:6px 6px 0 0; background:var(--panel2); border-color:var(--bd); color:var(--mut); }
+  .tabs button.active { background:var(--panel); color:var(--tx); border-bottom-color:var(--panel); }
+  main { padding:16px; max-width:1100px; margin:0 auto; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .col { display:flex; flex-direction:column; gap:4px; }
+  label { color:var(--mut); font-size:12px; }
+  textarea { width:100%; resize:vertical; }
+  .panel { background:var(--panel); border:1px solid var(--bd); border-radius:8px; padding:14px; margin-bottom:14px; }
+  .msgs { display:flex; flex-direction:column; gap:10px; min-height:120px; }
+  .msg { padding:9px 12px; border-radius:8px; max-width:88%; white-space:pre-wrap; word-wrap:break-word; }
+  .msg.user { align-self:flex-end; background:#243049; }
+  .msg.assistant { align-self:flex-start; background:var(--panel2); }
+  .role { font-size:11px; color:var(--mut); margin-bottom:2px; }
+  details.think { margin-top:6px; border-left:2px solid var(--think); padding-left:8px; }
+  details.think summary { color:var(--think); cursor:pointer; font-size:12px; }
+  details.think .body { color:var(--mut); font-size:13px; white-space:pre-wrap; margin-top:4px; }
+  .mem { font-size:11px; color:var(--mut); margin-top:6px; }
+  .pill { display:inline-block; background:var(--panel2); border:1px solid var(--bd);
+          border-radius:10px; padding:1px 7px; margin:2px 2px 0 0; font-size:11px; }
+  .agent-item { display:flex; gap:8px; align-items:center; padding:6px 8px; border:1px solid var(--bd);
+                border-radius:6px; margin-bottom:6px; cursor:pointer; }
+  .agent-item.active { border-color:var(--acc); background:var(--panel2); }
+  .agent-item .nm { font-weight:600; } .agent-item .meta { color:var(--mut); font-size:12px; }
+  .two { display:grid; grid-template-columns:300px 1fr; gap:14px; }
+  @media (max-width:760px){ .two { grid-template-columns:1fr; } }
+  .memlist { display:flex; flex-direction:column; gap:4px; max-height:160px; overflow:auto; }
+  .memrow { display:flex; gap:8px; align-items:center; font-size:13px; }
+  .memrow button { padding:1px 6px; font-size:11px; }
+  small.hint { color:var(--mut); }
+  a { color:var(--acc); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .find { margin:0 0 12px; padding:9px 11px; background:var(--panel2); border:1px solid var(--bd); border-radius:6px; font-size:13px; line-height:1.7; }
+  .switch { display:flex; align-items:center; gap:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>llmmock <small>local LLM test client</small></h1>
+  <span class="grow"></span>
+  <div class="switch"><label style="margin:0">Base URL</label>
+    <input id="baseUrl" style="width:220px" placeholder="(same origin)" /></div>
+  <div class="switch"><label style="margin:0">API key</label>
+    <input id="apiKey" type="password" style="width:120px" placeholder="optional" /></div>
+  <div class="switch"><span id="statusDot" class="dot"></span><span id="statusTxt" class="mut">checking…</span></div>
+  <button class="sec" onclick="checkHealth()">Test</button>
+</header>
+
+<div class="tabs">
+  <button id="tab-chat" class="active" onclick="showTab('chat')">Chat (OpenAI API)</button>
+  <button id="tab-agents" onclick="showTab('agents')">Agents</button>
+  <button id="tab-models" onclick="showTab('models')">Models</button>
+</div>
+
+<main>
+  <!-- ============ CHAT TAB ============ -->
+  <section id="view-chat">
+    <div class="panel">
+      <div class="row">
+        <div class="col"><label>Model</label><select id="model" style="min-width:240px"></select></div>
+        <div class="col"><label>Temp</label><input id="temp" type="number" step="0.1" value="0.7" style="width:70px"></div>
+        <div class="col"><label>top_p</label><input id="topp" type="number" step="0.05" min="0" max="1" placeholder="0.9" style="width:64px"></div>
+        <div class="col"><label>top_k</label><input id="topk" type="number" min="0" placeholder="40" style="width:64px"></div>
+        <div class="col"><label>num_ctx</label><input id="numctx" type="number" value="8192" style="width:90px"></div>
+        <div class="col"><label>max_tokens</label><input id="maxtok" type="number" value="512" style="width:90px"></div>
+        <div class="col"><label>&nbsp;</label><div class="switch"><input id="reason" type="checkbox"><label style="margin:0">Reasoning</label></div></div>
+        <div class="col"><label>&nbsp;</label><div class="switch"><input id="stream" type="checkbox" checked><label style="margin:0">Stream</label></div></div>
+        <span class="grow"></span>
+        <div class="col"><label>&nbsp;</label><button class="sec" onclick="resetChat()">Clear</button></div>
+      </div>
+      <div class="col" style="margin-top:10px">
+        <label>System prompt</label>
+        <textarea id="system" rows="2" placeholder="You are a helpful assistant.">You are a helpful, concise assistant.</textarea>
+      </div>
+    </div>
+
+    <div class="panel"><div id="chatMsgs" class="msgs"></div></div>
+
+    <div class="panel">
+      <div class="row">
+        <textarea id="chatInput" class="grow" rows="2" placeholder="Type a message, Ctrl+Enter to send"></textarea>
+        <button id="chatSend" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ AGENTS TAB ============ -->
+  <section id="view-agents" style="display:none">
+    <div class="two">
+      <div>
+        <div class="panel">
+          <div class="row" style="justify-content:space-between">
+            <strong>Agents</strong><button class="sec" onclick="loadAgents()">Refresh</button>
+          </div>
+          <div id="agentList" style="margin-top:8px"></div>
+        </div>
+        <div class="panel">
+          <strong>New agent</strong>
+          <div class="col" style="margin-top:8px"><label>Name</label><input id="naName" placeholder="alfred"></div>
+          <div class="col"><label>Directive (system prompt)</label><textarea id="naDir" rows="3" placeholder="You are Alfred, a concise butler…"></textarea></div>
+          <div class="row" style="margin-top:6px">
+            <div class="col"><label>Model</label><select id="naModel" style="min-width:200px"></select></div>
+            <div class="col"><label>Temp</label><input id="naTemp" type="number" step="0.1" value="0.5" style="width:70px"></div>
+            <div class="col"><label>&nbsp;</label><div class="switch"><input id="naReason" type="checkbox"><label style="margin:0">Reasoning</label></div></div>
+          </div>
+          <button style="margin-top:10px" onclick="createAgent()">Create agent</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel" id="agentHeader"><span class="mut">Select an agent on the left, or create one.</span></div>
+
+        <div class="panel" id="agentMemPanel" style="display:none">
+          <div class="row" style="justify-content:space-between"><strong>Long-term memory</strong></div>
+          <div class="row" style="margin-top:8px">
+            <input id="memInput" class="grow" placeholder="A fact to remember, e.g. 'User prefers Earl Grey tea.'">
+            <button onclick="addMemory()">Add</button>
+          </div>
+          <div id="memList" class="memlist" style="margin-top:8px"></div>
+        </div>
+
+        <div class="panel" id="agentChatPanel" style="display:none">
+          <div class="row">
+            <div class="col"><label>Session</label><input id="agSession" value="default" style="width:120px"></div>
+            <div class="col"><label>Reasoning</label>
+              <select id="agReason"><option value="">(agent default)</option><option value="true">on</option><option value="false">off</option></select></div>
+            <div class="col"><label>&nbsp;</label><div class="switch"><input id="agUseMem" type="checkbox" checked><label style="margin:0">Use memory</label></div></div>
+            <div class="col"><label>&nbsp;</label><div class="switch"><input id="agStream" type="checkbox" checked><label style="margin:0">Stream</label></div></div>
+            <div class="col"><label>max_tokens</label><input id="agMaxtok" type="number" value="512" style="width:90px"></div>
+            <span class="grow"></span>
+            <div class="col"><label>&nbsp;</label><button class="sec" onclick="loadAgentHistory()">Reload history</button></div>
+          </div>
+          <div id="agentMsgs" class="msgs" style="margin-top:10px"></div>
+          <div class="row" style="margin-top:10px">
+            <textarea id="agentInput" class="grow" rows="2" placeholder="Message the agent (Ctrl+Enter)"></textarea>
+            <button onclick="sendAgent()">Send</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MODELS TAB ============ -->
+  <section id="view-models" style="display:none">
+    <div class="panel">
+      <strong>Download a new model</strong>
+      <ol class="hint" style="margin:6px 0 12px; padding-left:18px; line-height:1.8">
+        <li>Enter a model: an <b>ollama name</b> (e.g. <code>qwen3:4b</code>) or a
+            <b>HuggingFace GGUF</b> repo or URL
+            (e.g. <code>https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF</code>).</li>
+        <li>For a HuggingFace model, set the <b>quantization</b>
+            (<code>Q4_K_M</code> is a good, small default).</li>
+        <li>Click <b>Download</b>. Progress shows below; the model appears in
+            “Installed models” when it finishes.</li>
+      </ol>
+      <div class="find">
+        <b>Where to find model names</b><br>
+        • <a href="https://ollama.com/library" target="_blank" rel="noopener">ollama.com/library</a>
+          — browse and copy the name + tag exactly (e.g. <code>qwen3:4b</code>,
+          <code>gemma4:e4b-it-q4_K_M</code>). Best supported on this backend.<br>
+        • <a href="https://huggingface.co/models?library=gguf&amp;sort=trending" target="_blank" rel="noopener">HuggingFace GGUF models</a>
+          — open a repo that contains <b>GGUF</b> files and paste its URL above.<br>
+        • After it downloads, click <b>Test</b> in the list below to confirm the model
+          actually loads and runs on this server.
+      </div>
+      <div class="row" style="align-items:flex-end">
+        <div class="col grow"><label>Model name, repo, or HuggingFace URL</label>
+          <input id="pullInput" placeholder="qwen3:4b   •   https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF"></div>
+        <div class="col" style="width:120px"><label>Quant (HF only)</label>
+          <input id="pullQuant" value="Q4_K_M" placeholder="Q4_K_M"></div>
+        <div class="col"><label>&nbsp;</label><button id="pullBtn" onclick="pullModel()">Download</button></div>
+      </div>
+      <div style="margin-top:8px">
+        <small class="hint">Examples (click to fill):</small><br>
+        <span class="pill" onclick="$('pullInput').value=this.textContent">qwen3:4b</span>
+        <span class="pill" onclick="$('pullInput').value=this.textContent">llama3.2:1b</span>
+        <span class="pill" onclick="$('pullInput').value=this.textContent">https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF</span>
+        <span class="pill" onclick="$('pullInput').value=this.textContent">https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF</span>
+      </div>
+      <div id="pullStatus" style="margin-top:12px; display:none"></div>
+      <small class="hint" style="display:block; margin-top:10px">
+        Note: HuggingFace repos must contain <b>GGUF</b> files. The original
+        <code>google/…</code> repos are safetensors and won't work — use a community GGUF
+        build (<code>ggml-org</code>, <code>unsloth</code>, <code>bartowski</code>).
+        Downloads keep running on the server even if you close this page; reopen this tab
+        to see progress again. Smaller quants (Q4_K_M) are safest on consumer GPUs.
+      </small>
+    </div>
+
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <strong>Installed models</strong><button class="sec" onclick="loadModels()">Refresh</button>
+      </div>
+      <div id="modelList" style="margin-top:8px"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+function base() {
+  // Empty = same origin as this page. If a value is given without a scheme
+  // (e.g. "192.168.1.50:8080"), assume http:// so the request still resolves.
+  let b = ($("baseUrl").value || "").trim().replace(/\/+$/, "");
+  if (b && !/^https?:\/\//i.test(b)) b = "http://" + b;
+  return b;
+}
+function headers() {
+  const h = { "Content-Type": "application/json" };
+  const k = $("apiKey").value.trim();
+  if (k) h["Authorization"] = "Bearer " + k;
+  return h;
+}
+const esc = s => (s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+async function* sse(resp) {
+  const reader = resp.body.getReader(); const dec = new TextDecoder(); let buf = "";
+  while (true) {
+    const { value, done } = await reader.read(); if (done) break;
+    buf += dec.decode(value, { stream: true }); let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 2);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (data === "[DONE]") return;
+      try { yield JSON.parse(data); } catch (_) {}
+    }
+  }
+}
+
+function showTab(t) {
+  for (const name of ["chat", "agents", "models"]) {
+    $("view-" + name).style.display = t === name ? "" : "none";
+    $("tab-" + name).classList.toggle("active", t === name);
+  }
+  if (t === "agents") loadAgents();
+  if (t === "models") { loadModels(); startPullPolling(); }
+  else { stopPullPolling(); }
+}
+
+async function checkHealth() {
+  $("statusTxt").textContent = "checking…"; $("statusDot").className = "dot";
+  try {
+    const h = await fetch(base() + "/health", { headers: headers() });
+    if (!h.ok) throw new Error("status " + h.status);
+    const d = await h.json();
+    // Probe an authenticated endpoint to validate the API key (when the server requires one).
+    const m = await fetch(base() + "/v1/models", { headers: headers() });
+    if (m.status === 401) {
+      $("statusDot").className = "dot err";
+      $("statusTxt").textContent = "auth required — enter API key";
+      fillModels([]);
+      return;
+    }
+    const models = ((await m.json()).data || []).map(x => x.id);
+    const ok = d.status === "ok";
+    $("statusDot").className = "dot " + (ok ? "ok" : "err");
+    $("statusTxt").textContent = (ok ? "ok" : "degraded") + ` · ${models.length} models`;
+    fillModels(models);
+  } catch (e) {
+    $("statusDot").className = "dot err"; $("statusTxt").textContent = "unreachable";
+  }
+}
+function fillModels(models) {
+  const chat = models.filter(m => !/embed|whisper/i.test(m));
+  for (const sel of [$("model"), $("naModel")]) {
+    const cur = sel.value; sel.innerHTML = "";
+    (chat.length ? chat : models).forEach(m => {
+      const o = document.createElement("option");
+      o.value = m;                    // keep the full id (e.g. hf.co/user/repo:Q4_K_M) for API calls
+      o.textContent = m.split("/").pop();  // display just the model:tag, not the registry/user path
+      o.title = m;                    // full id on hover
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
+  }
+}
+
+/* ---------- Chat tab (OpenAI-compatible) ---------- */
+let chatHistory = [];
+function resetChat() { chatHistory = []; $("chatMsgs").innerHTML = ""; }
+function bubble(container, role, text) {
+  const d = document.createElement("div"); d.className = "msg " + role;
+  d.innerHTML = `<div class="role">${role}</div><div class="content">${esc(text)}</div>`;
+  container.appendChild(d); container.scrollIntoView({ block: "end" }); return d;
+}
+function attachThink(bubbleEl, text) {
+  let t = bubbleEl.querySelector("details.think");
+  if (!t) {
+    t = document.createElement("details"); t.className = "think";
+    t.innerHTML = `<summary>reasoning</summary><div class="body"></div>`;
+    bubbleEl.appendChild(t);
+  }
+  t.querySelector(".body").textContent = text;
+}
+
+async function sendChat() {
+  const text = $("chatInput").value.trim(); if (!text) return;
+  $("chatInput").value = ""; $("chatSend").disabled = true;
+  bubble($("chatMsgs"), "user", text);
+  chatHistory.push({ role: "user", content: text });
+
+  const sys = $("system").value.trim();
+  const messages = sys ? [{ role: "system", content: sys }, ...chatHistory] : [...chatHistory];
+  const body = {
+    model: $("model").value, messages,
+    temperature: parseFloat($("temp").value),
+    num_ctx: parseInt($("numctx").value),
+    max_tokens: parseInt($("maxtok").value),
+    think: $("reason").checked,
+    stream: $("stream").checked,
+  };
+  const tp = parseFloat($("topp").value); if (!isNaN(tp)) body.top_p = tp;
+  const tk = parseInt($("topk").value); if (!isNaN(tk)) body.top_k = tk;
+  const bub = bubble($("chatMsgs"), "assistant", "");
+  const cEl = bub.querySelector(".content");
+  let content = "", thinking = "";
+  try {
+    const r = await fetch(base() + "/v1/chat/completions", { method: "POST", headers: headers(), body: JSON.stringify(body) });
+    if (!r.ok) { cEl.textContent = "Error " + r.status + ": " + (await r.text()); return; }
+    if (body.stream) {
+      for await (const ev of sse(r)) {
+        const d = ev.choices?.[0]?.delta || {};
+        if (d.reasoning_content) { thinking += d.reasoning_content; attachThink(bub, thinking); }
+        if (d.content) { content += d.content; cEl.textContent = content; }
+        $("chatMsgs").scrollIntoView({ block: "end" });
+      }
+    } else {
+      const d = await r.json(); const m = d.choices[0].message;
+      content = m.content || ""; cEl.textContent = content;
+      if (m.reasoning_content) attachThink(bub, m.reasoning_content);
+    }
+    chatHistory.push({ role: "assistant", content });
+  } catch (e) { cEl.textContent = "Request failed: " + e; }
+  finally { $("chatSend").disabled = false; }
+}
+
+/* ---------- Agents tab ---------- */
+let agents = [], selected = null;
+async function loadAgents() {
+  try {
+    const r = await fetch(base() + "/agents", { headers: headers() });
+    agents = (await r.json()).data || [];
+  } catch (e) { agents = []; }
+  const el = $("agentList"); el.innerHTML = agents.length ? "" : '<span class="mut">No agents yet.</span>';
+  agents.forEach(a => {
+    const d = document.createElement("div");
+    d.className = "agent-item" + (selected && selected.id === a.id ? " active" : "");
+    d.innerHTML = `<div class="grow"><div class="nm">${esc(a.name)}</div>
+      <div class="meta">${esc(a.model)} · reasoning ${a.reasoning ? "on" : "off"}</div></div>
+      <button class="sec" onclick="event.stopPropagation();deleteAgent('${a.id}')">✕</button>`;
+    d.onclick = () => selectAgent(a.id);
+    el.appendChild(d);
+  });
+}
+async function createAgent() {
+  const name = $("naName").value.trim(); if (!name) return alert("Name required");
+  const body = { name, directive: $("naDir").value, model: $("naModel").value || null,
+    reasoning: $("naReason").checked, temperature: parseFloat($("naTemp").value) };
+  const r = await fetch(base() + "/agents", { method: "POST", headers: headers(), body: JSON.stringify(body) });
+  if (!r.ok) return alert("Create failed: " + (await r.text()));
+  $("naName").value = ""; $("naDir").value = "";
+  await loadAgents(); selectAgent((await r.json()).id);
+}
+async function deleteAgent(id) {
+  if (!confirm("Delete this agent and all its memory/history?")) return;
+  await fetch(base() + "/agents/" + id, { method: "DELETE", headers: headers() });
+  if (selected && selected.id === id) selected = null;
+  $("agentMemPanel").style.display = $("agentChatPanel").style.display = "none";
+  $("agentHeader").innerHTML = '<span class="mut">Select an agent on the left.</span>';
+  loadAgents();
+}
+async function selectAgent(id) {
+  selected = agents.find(a => a.id === id) || null;
+  if (!selected) { const r = await fetch(base() + "/agents/" + id, { headers: headers() }); selected = await r.json(); }
+  loadAgents();
+  $("agentHeader").innerHTML =
+    `<div><strong>${esc(selected.name)}</strong> <span class="mut">${esc(selected.id)}</span></div>
+     <div class="mut" style="margin-top:4px">${esc(selected.directive) || "(no directive)"}</div>
+     <div style="margin-top:4px"><span class="pill">${esc(selected.model)}</span>
+        <span class="pill">temp ${selected.temperature}</span>
+        <span class="pill">num_ctx ${selected.num_ctx}</span>
+        <span class="pill">reasoning ${selected.reasoning ? "on" : "off"}</span>
+        <span class="pill">top_k ${selected.top_k}</span></div>`;
+  $("agentMemPanel").style.display = $("agentChatPanel").style.display = "";
+  $("agentMsgs").innerHTML = "";
+  loadMemories(); loadAgentHistory();
+}
+async function loadMemories() {
+  const r = await fetch(base() + `/agents/${selected.id}/memory`, { headers: headers() });
+  const mems = (await r.json()).data || [];
+  const el = $("memList"); el.innerHTML = mems.length ? "" : '<span class="mut">No memories.</span>';
+  mems.forEach(m => {
+    const d = document.createElement("div"); d.className = "memrow";
+    d.innerHTML = `<span class="grow">• ${esc(m.content)}</span>
+      <button class="sec" onclick="delMemory('${m.id}')">del</button>`;
+    el.appendChild(d);
+  });
+}
+async function addMemory() {
+  const content = $("memInput").value.trim(); if (!content) return;
+  await fetch(base() + `/agents/${selected.id}/memory`, { method: "POST", headers: headers(), body: JSON.stringify({ content }) });
+  $("memInput").value = ""; loadMemories();
+}
+async function delMemory(mid) {
+  await fetch(base() + `/agents/${selected.id}/memory/${mid}`, { method: "DELETE", headers: headers() });
+  loadMemories();
+}
+async function loadAgentHistory() {
+  if (!selected) return;
+  const sid = $("agSession").value || "default";
+  const r = await fetch(base() + `/agents/${selected.id}/sessions/${sid}/messages`, { headers: headers() });
+  const msgs = (await r.json()).data || [];
+  $("agentMsgs").innerHTML = "";
+  msgs.forEach(m => {
+    const b = bubble($("agentMsgs"), m.role, m.content);
+    if (m.thinking) attachThink(b, m.thinking);
+  });
+}
+async function sendAgent() {
+  if (!selected) return;
+  const text = $("agentInput").value.trim(); if (!text) return;
+  $("agentInput").value = "";
+  bubble($("agentMsgs"), "user", text);
+  const reason = $("agReason").value;
+  const body = {
+    message: text, session_id: $("agSession").value || "default",
+    use_memory: $("agUseMem").checked, stream: $("agStream").checked,
+    num_ctx: selected.num_ctx, temperature: selected.temperature,
+  };
+  if (reason !== "") body.reasoning = (reason === "true");
+  // max_tokens isn't a server field for agents; the agent uses its own config. (kept simple)
+  const bub = bubble($("agentMsgs"), "assistant", "");
+  const cEl = bub.querySelector(".content");
+  let content = "", thinking = "";
+  try {
+    const r = await fetch(base() + `/agents/${selected.id}/chat`, { method: "POST", headers: headers(), body: JSON.stringify(body) });
+    if (!r.ok) { cEl.textContent = "Error " + r.status + ": " + (await r.text()); return; }
+    if (body.stream) {
+      for await (const ev of sse(r)) {
+        if (ev.type === "thinking") { thinking += ev.delta; attachThink(bub, thinking); }
+        else if (ev.type === "content") { content += ev.delta; cEl.textContent = content; }
+        else if (ev.type === "done") { showMems(bub, ev.memories_used); }
+        $("agentMsgs").scrollIntoView({ block: "end" });
+      }
+    } else {
+      const d = await r.json();
+      content = d.content || ""; cEl.textContent = content;
+      if (d.thinking) attachThink(bub, d.thinking);
+      showMems(bub, d.memories_used);
+    }
+  } catch (e) { cEl.textContent = "Request failed: " + e; }
+}
+function showMems(bub, mems) {
+  if (!mems || !mems.length) return;
+  const d = document.createElement("div"); d.className = "mem";
+  d.innerHTML = "memory used: " + mems.map(m => `<span class="pill" title="score ${m.score}">${esc(m.content)}</span>`).join("");
+  bub.appendChild(d);
+}
+
+/* ---------- Models tab ---------- */
+function bytes(n) {
+  if (!n) return "—";
+  const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(i ? 1 : 0) + " " + u[i];
+}
+async function loadModels() {
+  const el = $("modelList");
+  try {
+    const r = await fetch(base() + "/models", { headers: headers() });
+    const models = (await r.json()).data || [];
+    el.innerHTML = models.length ? "" : '<span class="mut">No models installed.</span>';
+    models.forEach(m => {
+      const isGen = !/embed|whisper/i.test(m.name);  // only generative models are chat-testable
+      const d = document.createElement("div"); d.className = "agent-item"; d.dataset.model = m.name;
+      d.innerHTML = `<div class="grow"><div class="nm">${esc(m.name)}</div>
+        <div class="meta">${bytes(m.size)}${m.parameter_size ? " · " + esc(m.parameter_size) : ""}${m.quantization ? " · " + esc(m.quantization) : ""}</div></div>
+        <span class="testres" style="font-size:12px; white-space:nowrap"></span>
+        ${isGen ? '<button class="sec test-btn" title="Load the model and generate one token to confirm it runs here">Test</button>' : ''}
+        <button class="sec del-btn">delete</button>`;
+      const tb = d.querySelector(".test-btn"); if (tb) tb.onclick = () => checkModel(m.name, d);
+      d.querySelector(".del-btn").onclick = () => deleteModel(m.name);
+      el.appendChild(d);
+    });
+  } catch (e) { el.innerHTML = '<span class="mut">Could not load models.</span>'; }
+}
+async function checkModel(name, row) {
+  const res = row.querySelector(".testres"), btn = row.querySelector(".test-btn");
+  res.style.color = "var(--mut)"; res.textContent = "testing…"; res.title = "";
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch(base() + "/models/check", { method: "POST", headers: headers(), body: JSON.stringify({ model: name }) });
+    const d = await r.json();
+    if (d.ok) { res.style.color = "var(--ok)"; res.textContent = "✓ runs here"; res.title = "Loads and generates on this server."; }
+    else { res.style.color = "var(--err)"; res.textContent = "✗ won't load"; res.title = (d.error || "") + (d.hint ? "\n\n" + d.hint : ""); }
+  } catch (e) { res.style.color = "var(--err)"; res.textContent = "✗ error"; res.title = "" + e; }
+  finally { if (btn) btn.disabled = false; }
+}
+async function deleteModel(name) {
+  if (!confirm("Delete model " + name + "? This frees disk but you'll have to re-download it.")) return;
+  await fetch(base() + "/models/delete", { method: "POST", headers: headers(), body: JSON.stringify({ model: name }) });
+  loadModels(); checkHealth();
+}
+let pullTimer = null;
+const pendingVerify = new Set();   // models that just finished downloading, to auto-Test
+const handledDone = new Set();     // models whose completion we've already acted on
+function showPullError(msg) {
+  const b = $("pullStatus"); b.style.display = "";
+  b.innerHTML = `<div style="color:var(--err)">${esc(msg)}</div>`;
+}
+async function pullModel() {
+  const model = $("pullInput").value.trim(); if (!model) return;
+  const quantization = $("pullQuant").value.trim() || null;
+  $("pullBtn").disabled = true;
+  try {
+    // Returns immediately; the download runs on the server. We then poll for progress.
+    const r = await fetch(base() + "/models/pull", { method: "POST", headers: headers(), body: JSON.stringify({ model, quantization }) });
+    if (!r.ok) { showPullError("Error " + r.status + ": " + (await r.text())); return; }
+  } catch (e) { showPullError("Request failed: " + e); return; }
+  finally { $("pullBtn").disabled = false; }
+  startPullPolling();
+}
+async function refreshPulls() {
+  let entries = [];
+  try {
+    const r = await fetch(base() + "/models/pulls", { headers: headers() });
+    entries = (await r.json()).data || [];
+  } catch (e) { return; }  // transient — try again next tick
+
+  const downloading = entries.filter(p => !p.done);
+  const failed = entries.filter(p => p.done && p.error);
+  downloading.forEach(p => handledDone.delete(p.model));  // re-arm if a model is (re)downloading
+
+  // The moment a download finishes: refresh the installed list + dropdowns and auto-Test it (once).
+  let justFinished = false;
+  entries.filter(p => p.done && !p.error).forEach(p => {
+    if (!handledDone.has(p.model)) { handledDone.add(p.model); pendingVerify.add(p.model); justFinished = true; }
+  });
+  if (justFinished) { await loadModels(); checkHealth(); verifyPending(); }
+
+  // Progress bars only for in-progress downloads; finished ones get no bar (their row in the
+  // list is the confirmation). Failures are shown as a persistent line.
+  let html = downloading.map(p => {
+    const pct = p.percent;
+    const sz = (p.completed && p.total) ? `  (${bytes(p.completed)} / ${bytes(p.total)})` : "";
+    return `<div style="margin-bottom:10px"><div style="font-size:13px">${esc(p.model)} — ${esc(p.status || "working")}${pct != null ? `  ${pct}%` : ""}${sz}</div>
+      <progress value="${pct ?? 0}" max="100" style="width:100%; height:14px; margin-top:3px"></progress></div>`;
+  }).join("");
+  html += failed.map(p => `<div style="margin-bottom:8px; color:var(--err)">✗ ${esc(p.model)} — ${esc(p.error)}</div>`).join("");
+
+  const box = $("pullStatus");
+  box.style.display = html ? "" : "none";
+  box.innerHTML = html;
+}
+function verifyPending() {
+  if (!pendingVerify.size) return;
+  document.querySelectorAll("#modelList .agent-item").forEach(row => {
+    if (pendingVerify.has(row.dataset.model) && row.querySelector(".test-btn")) checkModel(row.dataset.model, row);
+  });
+  pendingVerify.clear();
+}
+function startPullPolling() { if (!pullTimer) { refreshPulls(); pullTimer = setInterval(refreshPulls, 1200); } }
+function stopPullPolling() { if (pullTimer) { clearInterval(pullTimer); pullTimer = null; } }
+
+/* keyboard + init */
+$("chatInput").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendChat(); });
+$("agentInput").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendAgent(); });
+// Remember API key + base URL across reloads (handy when the server requires a key).
+$("apiKey").value = localStorage.getItem("llmmock_key") || "";
+$("baseUrl").value = localStorage.getItem("llmmock_base") || "";
+$("apiKey").addEventListener("change", () => { localStorage.setItem("llmmock_key", $("apiKey").value.trim()); checkHealth(); });
+$("baseUrl").addEventListener("change", () => { localStorage.setItem("llmmock_base", $("baseUrl").value.trim()); checkHealth(); });
+checkHealth();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+[project]
+name = "llmmock"
+version = "0.1.0"
+description = "Local LLM API backend (ollama-backed) for development: OpenAI-compatible endpoint + agents with persistent memory and per-agent directives."
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+    "pydantic>=2.6",
+]
+
+[tool.setuptools]
+packages = ["llmmock"]
