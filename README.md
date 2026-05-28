@@ -177,6 +177,40 @@ You can reference an agent by its `id` or its `name` in the URL.
 | `MEMORY_MIN_SCORE` | `0.35` | min cosine similarity to inject |
 | `API_KEY` | *(empty)* | if set, require `Authorization: Bearer <key>` |
 | `HOST` / `PORT` | `0.0.0.0` / `8080` | bind address |
+| `SSL_CERTFILE` / `SSL_KEYFILE` | *(empty)* | set both to serve over HTTPS |
+
+## Authentication (optional)
+
+Auth is off by default. To require a key, set `API_KEY=your-secret` (env or `.env`) and
+restart. Then every endpoint except `/health` and `/ui` needs
+`Authorization: Bearer your-secret`. In the web client, enter the key under **Settings**
+(it's remembered in the browser). To turn it off, clear `API_KEY` and restart.
+
+## HTTPS / TLS (optional)
+
+Two common ways to serve over `https`:
+
+**1. Directly via uvicorn** (simplest for LAN/dev). Generate a self-signed cert, then set
+the two env vars — `run.sh` passes them to uvicorn:
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 \
+  -subj "/CN=YOUR_SERVER_IP" -addext "subjectAltName=IP:YOUR_SERVER_IP"
+SSL_CERTFILE=./cert.pem SSL_KEYFILE=./key.pem ./run.sh
+```
+
+Browsers warn on self-signed certs (accept once). For a *trusted* LAN cert with no
+warning, use [`mkcert`](https://github.com/FiloSottile/mkcert) to generate the cert/key
+and point the same env vars at them.
+
+**2. Behind a reverse proxy** (recommended for anything real). Run this app on plain HTTP
+bound to `127.0.0.1`, and put [Caddy](https://caddyserver.com) or nginx in front to
+terminate TLS (Caddy auto-provisions Let's Encrypt certs if you have a domain). Example
+`Caddyfile`: `your.domain { reverse_proxy 127.0.0.1:8080 }`.
+
+When served over HTTPS, the web client's same-origin calls use HTTPS automatically; if you
+point the **Base URL** at another host, use its `https://` URL to avoid mixed-content
+blocking.
 
 ## Layout
 

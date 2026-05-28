@@ -25,5 +25,14 @@ source .venv/bin/activate
 
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8080}"
-echo "Starting llmmock on http://${HOST}:${PORT}  (docs at /docs)"
-exec uvicorn llmmock.main:app --host "$HOST" --port "$PORT" "$@"
+
+# Optional HTTPS: set SSL_CERTFILE and SSL_KEYFILE to serve over TLS.
+SSL_ARGS=()
+SCHEME="http"
+if [ -n "${SSL_CERTFILE:-}" ] && [ -n "${SSL_KEYFILE:-}" ]; then
+  SSL_ARGS=(--ssl-certfile "$SSL_CERTFILE" --ssl-keyfile "$SSL_KEYFILE")
+  SCHEME="https"
+fi
+
+echo "Starting llmmock on ${SCHEME}://${HOST}:${PORT}  (web client at /ui, docs at /docs)"
+exec uvicorn llmmock.main:app --host "$HOST" --port "$PORT" "${SSL_ARGS[@]}" "$@"
